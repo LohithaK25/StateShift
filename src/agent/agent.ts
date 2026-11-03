@@ -98,6 +98,8 @@ const tools: OpenAI.Chat.Completions.ChatCompletionTool[] = [
 
 export async function runStateShiftAgent(
   scenarioName: ScenarioName,
+  onTrace?: (entry: AgentTraceEntry) => void,
+  onStateChange?: (state: NetworkState) => void,
 ): Promise<AgentRunResult> {
   const apiKey = process.env.MODEL_API_KEY;
 
@@ -330,12 +332,29 @@ Explain your investigation and final result clearly.
         };
       }
 
-      trace.push({
+      const traceEntry: AgentTraceEntry = {
         turn,
         tool: toolCall.function.name,
         args,
         result,
-      });
+      };
+
+      trace.push(traceEntry);
+
+      // Emit the completed tool execution.
+      onTrace?.(traceEntry);
+
+      // Publish authoritative state only after a successful mutation.
+      if (
+        (toolCall.function.name === "repair_link" ||
+            toolCall.function.name === "restart_node") &&
+        typeof result === "object" &&
+        result !== null &&
+        "success" in result &&
+        result.success === true
+      ) {
+      onStateChange?.(simulator.inspect());
+      }
 
       messages.push({
         role: "tool",

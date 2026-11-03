@@ -590,7 +590,17 @@ button:disabled {
 }
 
 .trace-check {
-  color: var(--green);
+  color: var(--muted);
+  font-size: 18px;
+  line-height: 1;
+}
+
+.trace-check.success {
+  color: var(--lime);
+}
+
+.trace-check.failure {
+  color: #ff7777;
 }
 
 .trace-empty {
@@ -694,12 +704,12 @@ button:disabled {
 }
 
 .outcome-card > p {
-  max-height: 230px;
-  overflow-y: auto;
   color: #aab3c4;
   font-size: 12px;
   line-height: 1.8;
   white-space: pre-wrap;
+  overflow-wrap: anywhere;
+  margin-bottom: 0;
 }
 
 .outcome-stats {
@@ -808,4 +818,297 @@ button:disabled {
     flex-wrap: wrap;
     font-size: 8px;
   }
+}
+
+/* Verified route visualization */
+.topology-visual {
+  min-width: 0;
+}
+
+.network-link {
+  transition:
+    stroke 350ms ease,
+    stroke-width 350ms ease,
+    filter 350ms ease,
+    opacity 350ms ease;
+}
+
+.network-link.verified {
+  stroke: var(--lime);
+  stroke-width: 4;
+  filter: drop-shadow(0 0 7px #c6f36a99);
+  stroke-dasharray: 10 7;
+  animation: verified-flow 1.4s linear infinite;
+}
+
+@keyframes verified-flow {
+  to {
+    stroke-dashoffset: -34;
+  }
+}
+
+.node-halo {
+  transition:
+    stroke 350ms ease,
+    opacity 350ms ease,
+    stroke-width 350ms ease;
+}
+
+.node-halo.on-path {
+  stroke: var(--lime);
+  stroke-width: 2.5;
+  opacity: 0.95;
+  filter: drop-shadow(0 0 7px #c6f36a88);
+}
+
+.verified-label {
+  fill: var(--lime);
+  font-weight: 500;
+}
+
+.verified-route-note {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 10px;
+  margin: 4px 0 16px;
+  padding: 12px 14px;
+  border: 1px solid #43552d;
+  border-radius: 7px;
+  background: #141d16;
+  color: var(--lime);
+  font: 9px var(--mono);
+  letter-spacing: 0.6px;
+}
+
+.verified-route-note strong {
+  flex-basis: 100%;
+  color: #dcebbf;
+  font: 11px/1.7 var(--mono);
+  letter-spacing: 0;
+  overflow-wrap: anywhere;
+}
+
+.verified-route-dot {
+  width: 7px;
+  height: 7px;
+  border-radius: 50%;
+  background: var(--lime);
+  box-shadow: 0 0 9px #c6f36a99;
+  animation: route-pulse 1.8s ease-in-out infinite;
+}
+
+@keyframes route-pulse {
+  50% {
+    opacity: 0.4;
+    box-shadow: 0 0 2px #c6f36a66;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .network-link,
+  .node-halo {
+    transition: none;
+  }
+
+  .network-link.verified,
+  .verified-route-dot {
+    animation: none;
+  }
+}
+
+/* React Bits-inspired Spotlight Card */
+.card-spotlight {
+  position: relative;
+  isolation: isolate;
+  overflow: hidden;
+  border-radius: 9px;
+}
+
+.card-spotlight::before {
+  content: "";
+  position: absolute;
+  inset: 0;
+  z-index: 1;
+  pointer-events: none;
+  opacity: 0;
+  background: radial-gradient(
+    190px circle at var(--mouse-x, -100px) var(--mouse-y, -100px),
+    var(--spotlight-color, rgba(198, 243, 106, 0.13)),
+    transparent 75%
+  );
+  transition: opacity 250ms ease;
+}
+
+.card-spotlight:hover::before {
+  opacity: 1;
+}
+
+.scenario-spotlight > .scenario-option {
+  position: relative;
+  z-index: 0;
+  height: 100%;
+}
+
+@media (hover: none), (prefers-reduced-motion: reduce) {
+  .card-spotlight::before {
+    display: none;
+  }
+}
+
+/* Stage 2C — Investigation trace */
+
+.trace-entry {
+  align-items: flex-start;
+  gap: 15px;
+}
+
+.trace-content {
+  min-width: 0;
+  flex: 1;
+}
+
+.trace-title {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+
+.trace-title > div {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 9px;
+}
+
+.trace-stage {
+  font: 9px var(--mono);
+  letter-spacing: 1px;
+  color: var(--lime);
+  opacity: 0.8;
+}
+
+.trace-description {
+  margin: 8px 0 12px;
+  color: var(--muted);
+  font-size: 12px;
+  line-height: 1.6;
+}
+
+.trace-turn {
+  font: 9px var(--mono);
+  color: var(--muted);
+  letter-spacing: 0.7px;
+}
+
+.trace-arguments {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 7px;
+  margin-bottom: 12px;
+}
+
+.trace-argument {
+  display: inline-flex;
+  gap: 7px;
+  align-items: center;
+  padding: 6px 9px;
+  border: 1px solid var(--border);
+  border-radius: 5px;
+  background: rgba(255, 255, 255, 0.025);
+  font: 10px var(--mono);
+}
+
+.trace-argument span {
+  color: var(--muted);
+}
+
+.trace-argument strong {
+  color: var(--text);
+  font-weight: 500;
+  overflow-wrap: anywhere;
+}
+
+.trace-outcome {
+  display: inline-flex;
+  align-items: center;
+  gap: 7px;
+  font: 9px var(--mono);
+  letter-spacing: 0.8px;
+}
+
+.trace-outcome-dot {
+  width: 6px;
+  height: 6px;
+  border-radius: 50%;
+  background: currentColor;
+}
+
+.trace-outcome.success {
+  color: var(--lime);
+}
+
+.trace-outcome.failure {
+  color: #ff7777;
+}
+
+.trace-outcome.neutral {
+  color: var(--muted);
+}
+
+.trace-raw {
+  margin-top: 12px;
+  border-top: 1px solid var(--border);
+  padding-top: 9px;
+}
+
+.trace-raw summary {
+  color: var(--muted);
+  font: 10px var(--mono);
+  cursor: pointer;
+  letter-spacing: 0.4px;
+}
+
+.trace-raw summary:hover {
+  color: var(--lime);
+}
+
+.trace-raw pre {
+  margin-top: 10px;
+  padding: 12px;
+  max-width: 100%;
+  overflow-x: auto;
+  border-radius: 5px;
+  background: rgba(0, 0, 0, 0.2);
+  color: var(--muted);
+  font: 10px/1.7 var(--mono);
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+}
+
+@media (max-width: 600px) {
+  .trace-entry {
+    gap: 9px;
+  }
+
+  .trace-title {
+    align-items: flex-start;
+  }
+}
+
+/* Stage 3 — Live investigation status */
+
+.loading-state {
+  border-bottom: 1px solid var(--line);
+  padding-bottom: 15px;
+}
+
+.trace-count {
+  transition: color 200ms ease;
+}
+
+.trace-panel:has(.loading-state) .trace-count {
+  color: var(--lime);
 }

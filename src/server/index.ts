@@ -1,4 +1,4 @@
-
+import { NetworkSimulator } from "../simulator/network.js";
 import "dotenv/config";
 import express from "express";
 import cors from "cors";
@@ -28,9 +28,10 @@ app.get("/api/health", (_req, res) => {
 
 app.get("/api/scenarios", (_req, res) => {
   res.json({
-    scenarios: Object.keys(scenarios).map((name) => ({
-      id: name,
-      name: name.replaceAll("_", " "),
+    scenarios: Object.entries(scenarios).map(([id, state]) => ({
+      id,
+      name: id.replaceAll("_", " "),
+      initialState: new NetworkSimulator(state).inspect(),
     })),
   });
 });
@@ -73,6 +74,72 @@ app.post("/api/run", async (req, res) => {
           ? error.message
           : "Agent execution failed.",
     });
+  } finally {
+    activeRuns--;
+  }
+});
+
+app.post("/api/run/stream", async (req, res) => {
+  const scenario = req.body?.scenario as string | undefined;
+
+  if (
+    !scenario ||
+    !Object.prototype.hasOwnProperty.call(scenarios, scenario)
+  ) {
+    res.status(400).json({
+      error: "Invalid scenario.",
+      availableScenarios: Object.keys(scenarios),
+    });
+    return;
+  }
+
+  if (activeRuns >= 3) {
+    res.status(429).json({
+      error: "The agent is busy. Please try again shortly.",
+    });
+    return;
+  }
+
+  activeRuns++;
+
+  res.setHeader("Content-Type", "text/event-stream");
+  res.setHeader("Cache-Control", "no-cache, no-transform");
+  res.setHeader("Connection", "keep-alive");
+  res.setHeader("X-Accel-Buffering", "no");
+
+  res.flushHeaders();
+
+  const sendEvent = (event: string, data: unknown) => {
+    if (res.destroyed || res.writableEnded) return;
+
+    res.write(`event: ${event}\n`);
+    res.write(`data: ${JSON.stringify(data)}\n\n`);
+  };
+
+  try {
+    const result = await runStateShiftAgent(
+      scenario as ScenarioName,
+      (entry) => {
+        sendEvent("trace", entry);
+      },
+      (state) => {
+        sendEvent("state", state);
+      },
+    );
+
+    sendEvent("complete", result);
+    res.end();
+  } catch (error) {
+    console.error("Streaming agent execution failed:", error);
+
+    sendEvent("error", {
+      error:
+        error instanceof Error
+          ? error.message
+          : "Agent execution failed.",
+    });
+
+    res.end();
   } finally {
     activeRuns--;
   }

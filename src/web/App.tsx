@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useEffect, useRef, useState } from "react";
 
 type ScenarioName = "broken_link" | "failed_router" | "redundant_path";
 
@@ -64,6 +64,85 @@ const scenarioOptions: {
   },
 ];
 
+function getTracePresentation(entry: TraceEntry) {
+  const presentations: Record<
+    string,
+    { title: string; description: string; stage: string }
+  > = {
+    inspect_network: {
+      title: "Inspect network",
+      description: "Read the current state of network nodes and links.",
+      stage: "INSPECTION",
+    },
+    test_connectivity: {
+      title: "Test connectivity",
+      description: "Check whether the client can reach the service.",
+      stage: "DIAGNOSIS",
+    },
+    repair_link: {
+      title: "Repair network link",
+      description: "Attempt to restore a failed network connection.",
+      stage: "REPAIR",
+    },
+    restart_node: {
+      title: "Restart network node",
+      description: "Attempt to recover a failed network node.",
+      stage: "REPAIR",
+    },
+  };
+
+  const presentation = presentations[entry.tool] ?? {
+    title: entry.tool.replaceAll("_", " "),
+    description: "Agent tool execution.",
+    stage: "EXECUTION",
+  };
+
+  const result =
+    typeof entry.result === "object" && entry.result !== null
+      ? (entry.result as Record<string, unknown>)
+      : {};
+
+  let outcome = "RESULT RECEIVED";
+  let tone = "neutral";
+
+  if (typeof result.success === "boolean") {
+    outcome = result.success ? "EXECUTED" : "DENIED / FAILED";
+    tone = result.success ? "success" : "failure";
+  } else if (typeof result.reachable === "boolean") {
+    outcome = result.reachable ? "REACHABLE" : "UNREACHABLE";
+    tone = result.reachable ? "success" : "failure";
+  } else if (typeof result.error === "string") {
+    outcome = "ERROR";
+    tone = "failure";
+  } else if (
+    Array.isArray(result.nodes) &&
+    Array.isArray(result.links)
+  ) {
+    outcome = "NETWORK STATE RECEIVED";
+    tone = "success";
+  }
+
+  return {
+    ...presentation,
+    outcome,
+    tone,
+  };
+}
+
+function formatTraceValue(value: unknown): string {
+  if (typeof value === "string") return value;
+  return JSON.stringify(value);
+}
+
+function formatAgentResponse(response: string): string {
+  return response
+    .replace(/\*\*(.*?)\*\*/g, "$1")
+    .replace(/__(.*?)__/g, "$1")
+    .replace(/`([^`]+)`/g, "$1")
+    .replace(/^#{1,6}\s+/gm, "")
+    .replace(/^\s*[-*]\s+/gm, "• ");
+}
+
 const positions: Record<string, { x: number; y: number }> = {
   client: { x: 90, y: 155 },
   "router-1": { x: 270, y: 80 },
@@ -72,41 +151,80 @@ const positions: Record<string, { x: number; y: number }> = {
   service: { x: 650, y: 155 },
 };
 
-function NetworkTopology({
-  state,
-  title,
+function SpotlightCard({
+  children,
+  className = "",
+  spotlightColor = "rgba(198, 243, 106, 0.13)",
 }: {
-  state: NetworkState;
-  title: string;
+  children: React.ReactNode;
+  className?: string;
+  spotlightColor?: string;
 }) {
-  const [selectedNode, setSelectedNode] = useState<string | null>(null);
+  const cardRef = useRef<HTMLDivElement>(null);
 
-  const pathNodeIds = new Set<string>();
+  function handleMouseMove(
+    event: React.MouseEvent<HTMLDivElement>
+  ) {
+    if (!cardRef.current) return;
 
-  if (state.nodes.length > 0) {
-    // Highlight the verified route when available in the latest result.
-    // Route highlighting is supplied by the parent in the result panel.
+    const rect = cardRef.current.getBoundingClientRect();
+
+    cardRef.current.style.setProperty(
+      "--mouse-x",
+      `${event.clientX - rect.left}px`
+    );
+
+    cardRef.current.style.setProperty(
+      "--mouse-y",
+      `${event.clientY - rect.top}px`
+    );
+
+    cardRef.current.style.setProperty(
+      "--spotlight-color",
+      spotlightColor
+    );
   }
 
   return (
-    <section className="panel topology-panel">
-      <div className="panel-heading">
-        <div>
-          <div className="eyebrow">NETWORK MAP</div>
-          <h2>{title}</h2>
-        </div>
-        <div className="legend">
-          <span><i className="legend-dot up" /> Operational</span>
-          <span><i className="legend-dot down" /> Failed</span>
-        </div>
-      </div>
+    <div
+      ref={cardRef}
+      onMouseMove={handleMouseMove}
+      className={`card-spotlight ${className}`}
+    >
+      {children}
+    </div>
+  );
+}
 
+function NetworkTopology({
+  state,
+  verifiedPath = [],
+}: {
+  state: NetworkState;
+  verifiedPath?: string[];
+}) {
+  const [selectedNode, setSelectedNode] = useState<string | null>(null);
+
+  const pathNodeIds = new Set(verifiedPath);
+  const pathEdges = new Set<string>();
+
+  for (let i = 0; i < verifiedPath.length - 1; i++) {
+    const a = verifiedPath[i];
+    const b = verifiedPath[i + 1];
+
+    if (a && b) {
+      pathEdges.add([a, b].sort().join("::"));
+    }
+  }
+
+  return (
+    <div className="topology-visual">
       <div className="topology-scroll">
         <svg
           className="topology"
           viewBox="0 0 740 315"
           role="img"
-          aria-label="Network topology showing clients, routers, service and their connections"
+          aria-label="Network topology showing operational, failed and verified connections"
         >
           {state.links.map((link) => {
             const source = positions[link.source];
@@ -115,6 +233,9 @@ function NetworkTopology({
             if (!source || !target) return null;
 
             const down = link.status === "down";
+            const onPath = pathEdges.has(
+              [link.source, link.target].sort().join("::")
+            );
 
             return (
               <g key={link.id}>
@@ -123,16 +244,22 @@ function NetworkTopology({
                   y1={source.y}
                   x2={target.x}
                   y2={target.y}
-                  className={`network-link ${down ? "failed" : "operational"}`}
+                  className={`network-link ${
+                    down ? "failed" : "operational"
+                  } ${onPath ? "verified" : ""}`}
                 />
+
                 <text
                   x={(source.x + target.x) / 2}
                   y={(source.y + target.y) / 2 - 12}
-                  className={`link-label ${down ? "failed-label" : ""}`}
+                  className={`link-label ${
+                    down ? "failed-label" : ""
+                  } ${onPath ? "verified-label" : ""}`}
                   textAnchor="middle"
                 >
                   {link.id}
                 </text>
+
                 {down && (
                   <g>
                     <circle
@@ -143,11 +270,11 @@ function NetworkTopology({
                     />
                     <text
                       x={(source.x + target.x) / 2}
-                      y={(source.y + target.y) / 2 + 4}
+                      y={(source.y + target.y) / 2 + 5}
                       textAnchor="middle"
                       className="failure-cross"
                     >
-                      ×
+                      {"\u00D7"}
                     </text>
                   </g>
                 )}
@@ -161,6 +288,7 @@ function NetworkTopology({
 
             const down = node.status === "down";
             const active = selectedNode === node.id;
+            const onPath = pathNodeIds.has(node.id);
 
             return (
               <g
@@ -174,6 +302,7 @@ function NetworkTopology({
                 aria-label={`${node.id}, ${node.status}`}
                 onKeyDown={(event) => {
                   if (event.key === "Enter" || event.key === " ") {
+                    event.preventDefault();
                     setSelectedNode(active ? null : node.id);
                   }
                 }}
@@ -182,14 +311,18 @@ function NetworkTopology({
                   cx={point.x}
                   cy={point.y}
                   r={node.type === "router" ? 31 : 35}
-                  className={`node-halo ${down ? "down" : "up"} ${active ? "selected" : ""}`}
+                  className={`node-halo ${down ? "down" : "up"} ${
+                    active ? "selected" : ""
+                  } ${onPath ? "on-path" : ""}`}
                 />
+
                 <circle
                   cx={point.x}
                   cy={point.y}
                   r={node.type === "router" ? 25 : 29}
                   className={`node-core ${down ? "down" : "up"}`}
                 />
+
                 <text
                   x={point.x}
                   y={point.y + 5}
@@ -202,6 +335,7 @@ function NetworkTopology({
                       ? "S"
                       : "R"}
                 </text>
+
                 <text
                   x={point.x}
                   y={point.y + 52}
@@ -210,11 +344,14 @@ function NetworkTopology({
                 >
                   {node.id}
                 </text>
+
                 <text
                   x={point.x}
                   y={point.y + 68}
                   textAnchor="middle"
-                  className={`node-status ${down ? "failed-label" : ""}`}
+                  className={`node-status ${
+                    down ? "failed-label" : ""
+                  }`}
                 >
                   {node.status.toUpperCase()}
                 </text>
@@ -223,6 +360,14 @@ function NetworkTopology({
           })}
         </svg>
       </div>
+
+      {verifiedPath.length > 0 && (
+        <div className="verified-route-note">
+          <span className="verified-route-dot" />
+          VERIFIED ROUTE
+          <strong>{verifiedPath.join("  →  ")}</strong>
+        </div>
+      )}
 
       <div className="topology-footer">
         <span>{state.nodes.length} nodes</span>
@@ -239,7 +384,7 @@ function NetworkTopology({
           <button onClick={() => setSelectedNode(null)}>Clear</button>
         </div>
       )}
-    </section>
+    </div>
   );
 }
 
@@ -248,48 +393,175 @@ function App() {
     useState<ScenarioName>("broken_link");
   const [result, setResult] = useState<AgentResult | null>(null);
   const [loading, setLoading] = useState(false);
+  const [liveTrace, setLiveTrace] = useState<TraceEntry[]>([]);
+  const [liveNetworkState, setLiveNetworkState] = useState<NetworkState | null>(null);
   const [error, setError] = useState("");
   const [view, setView] = useState<"before" | "after">("before");
+  const [scenarioStates, setScenarioStates] = useState<
+    Partial<Record<ScenarioName, NetworkState>>
+  >({});
+
+  useEffect(() => {
+    let cancelled = false;
+
+    async function loadScenarios() {
+        try {
+        const response = await fetch("/api/scenarios");
+
+        if (!response.ok) {
+            throw new Error("Could not load network scenarios.");
+        }
+
+        const data = await response.json() as {
+            scenarios: Array<{
+            id: ScenarioName;
+            initialState: NetworkState;
+            }>;
+        };
+
+        if (!cancelled) {
+            const states: Partial<Record<ScenarioName, NetworkState>> = {};
+
+            for (const item of data.scenarios) {
+            states[item.id] = item.initialState;
+            }
+
+            setScenarioStates(states);
+        }
+        } catch (err) {
+        if (!cancelled) {
+            setError(
+            err instanceof Error
+                ? err.message
+                : "Could not load network scenarios."
+            );
+        }
+        }
+    }
+
+    loadScenarios();
+
+    return () => {
+        cancelled = true;
+    };
+  }, []);
 
   async function runInvestigation() {
     setLoading(true);
     setError("");
     setResult(null);
+    setLiveTrace([]);
     setView("before");
+    setLiveNetworkState(scenarioStates[scenario] ?? null);
 
     try {
-      const response = await fetch("/api/run", {
+        const response = await fetch("/api/run/stream", {
         method: "POST",
         headers: {
-          "Content-Type": "application/json",
+            "Content-Type": "application/json",
+            Accept: "text/event-stream",
         },
         body: JSON.stringify({ scenario }),
-      });
+        });
 
-      const data = await response.json();
+        if (!response.ok) {
+        const errorData = await response.json().catch(() => ({}));
+        throw new Error(
+            errorData.error ?? "Agent execution failed.",
+        );
+        }
 
-      if (!response.ok) {
-        throw new Error(data.error ?? "Agent execution failed.");
-      }
+        if (!response.body) {
+        throw new Error("Streaming response body is unavailable.");
+        }
 
-      setResult(data as AgentResult);
-      setView("after");
+        const reader = response.body.getReader();
+        const decoder = new TextDecoder();
+
+        let buffer = "";
+        const completion: { result: AgentResult | null } = {
+            result: null,
+        };
+
+        function processEvent(block: string) {
+        let eventName = "message";
+        const dataLines: string[] = [];
+
+        for (const line of block.split("\n")) {
+            if (line.startsWith("event:")) {
+            eventName = line.slice(6).trim();
+            } else if (line.startsWith("data:")) {
+            dataLines.push(line.slice(5).trimStart());
+            }
+        }
+
+        if (dataLines.length === 0) return;
+
+        const payload = JSON.parse(dataLines.join("\n"));
+
+        if (eventName === "trace") {
+            setLiveTrace((prev) => [...prev, payload as TraceEntry]);
+        } else if (eventName === "state") {
+            setLiveNetworkState(payload as NetworkState);
+        } else if (eventName === "complete") {
+            completion.result = payload as AgentResult;
+        } else if (eventName === "error") {
+            throw new Error(
+                (payload as { error?: string }).error ?? "Agent execution failed"
+            );
+        }
+        }
+
+        while (true) {
+        const { value, done } = await reader.read();
+
+        if (done) break;
+
+        buffer += decoder.decode(value, { stream: true });
+        buffer = buffer.replace(/\r\n/g, "\n");
+
+        let boundary = buffer.indexOf("\n\n");
+
+        while (boundary !== -1) {
+            const block = buffer.slice(0, boundary);
+            buffer = buffer.slice(boundary + 2);
+
+            processEvent(block);
+            boundary = buffer.indexOf("\n\n");
+        }
+        }
+
+        buffer += decoder.decode();
+
+        if (buffer.trim()) {
+        processEvent(buffer);
+        }
+
+        if (!completion.result) {
+        throw new Error(
+            "The investigation stream ended without a completion event.",
+        );
+        }
+
+        setResult(completion.result);
+        setLiveTrace(completion.result.trace);
+        setView("after");
     } catch (err) {
-      setError(
+        setError(
         err instanceof Error
-          ? err.message
-          : "Could not connect to the StateShift API.",
-      );
+            ? err.message
+            : "Could not connect to the StateShift API.",
+        );
     } finally {
-      setLoading(false);
+        setLoading(false);
     }
   }
 
   const displayedState = result
     ? view === "before"
-      ? result.initialState
-      : result.finalState
-    : null;
+        ? result.initialState
+        : result.finalState
+    : liveNetworkState ?? scenarioStates[scenario] ?? null;
 
   const selectedScenario = scenarioOptions.find(
     (item) => item.id === scenario,
@@ -334,13 +606,17 @@ function App() {
 
           <div className="scenario-list">
             {scenarioOptions.map((option, index) => (
-              <button
+              <SpotlightCard
                 key={option.id}
+                className="scenario-spotlight"
+              >
+              <button
                 className={`scenario-option ${scenario === option.id ? "active" : ""}`}
                 onClick={() => {
                   setScenario(option.id);
                   setResult(null);
                   setError("");
+                  setLiveNetworkState(null);
                 }}
                 disabled={loading}
               >
@@ -351,6 +627,7 @@ function App() {
                 </span>
                 <span className="scenario-arrow">↗</span>
               </button>
+              </SpotlightCard>
             ))}
           </div>
 
@@ -402,10 +679,12 @@ function App() {
             {displayedState ? (
               <NetworkTopology
                 state={displayedState}
-                title={
-                  view === "before"
-                    ? "Initial network condition"
-                    : "Final network condition"
+                verifiedPath={
+                    result &&
+                    view === "after" &&
+                    result.verification.reachable
+                        ? result.verification.path
+                        : []
                 }
               />
             ) : (
@@ -429,34 +708,90 @@ function App() {
                 <h2>Investigation trace</h2>
               </div>
               <span className="trace-count">
-                {result ? `${result.trace.length} TOOL CALLS` : "AWAITING RUN"}
+                {loading
+                  ? `${liveTrace.length} TOOL CALLS · LIVE`
+                  : result
+                    ? `${result.trace.length} TOOL CALLS`
+                    : "AWAITING RUN"}
               </span>
             </div>
 
-            {loading ? (
-              <div className="loading-state">
-                <span className="spinner" />
-                Muse Spark is inspecting the network and deciding what to do...
-              </div>
-            ) : result ? (
-              <div className="trace-list">
-                {result.trace.map((entry, index) => (
-                  <div className="trace-entry" key={`${entry.turn}-${index}`}>
-                    <div className="trace-index">
-                      {String(index + 1).padStart(2, "0")}
+            {loading || result ? (
+              <>
+                {loading && (
+                    <div className="loading-state">
+                        <span className="spinner" />
+                        Muse Spark is inspecting the network and deciding what to do...
                     </div>
-                    <div className="trace-content">
-                      <div className="trace-title">
-                        <strong>{entry.tool.replaceAll("_", " ")}</strong>
-                        <span>TURN {entry.turn}</span>
-                      </div>
-                      <code>{JSON.stringify(entry.args)}</code>
-                      <pre>{JSON.stringify(entry.result, null, 2)}</pre>
-                    </div>
-                    <span className="trace-check">✓</span>
-                  </div>
-                ))}
+                )}
+
+                <div className="trace-list">
+                {(result?.trace ?? liveTrace).map((entry, index) => {
+                    const presentation = getTracePresentation(entry);
+
+                    return (
+                    <article
+                        className="trace-entry"
+                        key={`${entry.turn}-${index}`}
+                    >
+                        <div className="trace-index">
+                        {String(index + 1).padStart(2, "0")}
+                        </div>
+
+                        <div className="trace-content">
+                        <div className="trace-title">
+                            <div>
+                            <span className="trace-stage">
+                                {presentation.stage}
+                            </span>
+                            <strong>{presentation.title}</strong>
+                            </div>
+
+                            <span className="trace-turn">
+                            TURN {entry.turn}
+                            </span>
+                        </div>
+
+                        <p className="trace-description">
+                            {presentation.description}
+                        </p>
+
+                        {Object.keys(entry.args).length > 0 && (
+                            <div className="trace-arguments">
+                            {Object.entries(entry.args).map(([key, value]) => (
+                                <span className="trace-argument" key={key}>
+                                <span>{key}</span>
+                                <strong>{formatTraceValue(value)}</strong>
+                                </span>
+                            ))}
+                            </div>
+                        )}
+
+                        <div className={`trace-outcome ${presentation.tone}`}>
+                            <span className="trace-outcome-dot" />
+                            {presentation.outcome}
+                        </div>
+
+                        <details className="trace-raw">
+                            <summary>Inspect raw tool output</summary>
+                            <pre>
+                            {JSON.stringify(entry.result, null, 2)}
+                            </pre>
+                        </details>
+                        </div>
+
+                        <span
+                            className={`trace-check ${presentation.tone}`}
+                            title="Tool call completed"
+                            aria-label="Tool call completed"
+                        >
+                        {"\u2022"}
+                        </span>
+                    </article>
+                    );
+                })}
               </div>
+            </>
             ) : (
               <div className="trace-empty">
                 Agent tool calls and observations will appear here.
@@ -498,7 +833,7 @@ function App() {
             <div className="outcome-card panel">
               <div className="eyebrow">AGENT DECISION</div>
               <h2>Investigation summary</h2>
-              <p>{result.agentResponse}</p>
+              <p>{formatAgentResponse(result.agentResponse)}</p>
               <div className="outcome-stats">
                 <div>
                   <strong>{result.repairActions}</strong>
