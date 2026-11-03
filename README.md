@@ -310,19 +310,24 @@ The project has passed:
 
 ## Demo
 
-### Broken Link — Before Recovery
+**Watch the StateShift demonstration:** [View the 2–3 minute demo](https://youtu.be/wQokE-XzC68)
 
+The video demonstrates:
+
+1. **Broken Link:** Failure diagnosis, link repair, live topology updates, and verified recovery.
+2. **Failed Router:** Router failure detection, restart operation, and connectivity verification.
+3. **Redundant Path:** Recognition of an operational backup route, with zero unnecessary repair actions.
+
+### Screenshots
+
+#### Broken Link — Before Recovery
 ![Broken link before recovery](docs/screenshots/broken-link-before.png)
 
-### Broken Link — After Recovery
-
+#### Broken Link — After Recovery
 ![Verified network recovery](docs/screenshots/broken-link-after.png)
 
-### Redundant Path — No Unnecessary Repairs
-
+#### Redundant Path — No Unnecessary Repairs
 ![Redundant path verification](docs/screenshots/redundant-path-verified.png)
-
-**Project demo video:** Coming soon.
 
 ## Project Goals
 
