@@ -1,4 +1,3 @@
-
 {
   "compilerOptions": {
     "target": "ES2022",
@@ -13,8 +12,14 @@
     "declaration": true,
     "sourceMap": true,
     "outDir": "./dist",
-    "rootDir": "."
+    "rootDir": ".",
+    "jsx": "react-jsx"
   },
-  "include": ["src/**/*.ts", "tests/**/*.ts"],
+  "include": [
+    "src/**/*.ts",
+    "src/**/*.tsx",
+    "tests/**/*.ts",
+    "vite.config.ts"
+  ],
   "exclude": ["node_modules", "dist"]
 }

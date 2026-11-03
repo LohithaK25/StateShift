@@ -7,7 +7,9 @@
     "test": "tsx --test tests/*.test.ts",
     "typecheck": "tsc --noEmit",
     "demo": "tsx src/demo.ts",
-    "agent": "tsx src/agent/run-agent.ts"
+    "agent": "tsx src/agent/run-agent.ts",
+    "server": "tsx src/server/index.ts",
+    "dev": "vite --config vite.config.ts"
   },
   "keywords": [
     "ai-agent",
@@ -18,12 +20,22 @@
   "author": "LohithaK25",
   "license": "ISC",
   "dependencies": {
+    "cors": "^2.8.6",
     "dotenv": "^18.0.9",
+    "express": "^5.3.0",
     "openai": "^7.44.0"
   },
   "devDependencies": {
+    "@types/cors": "^2.8.19",
+    "@types/express": "^5.0.6",
     "@types/node": "^26.6.5",
+    "@types/react": "^19.3.0",
+    "@types/react-dom": "^19.3.0",
+    "@vitejs/plugin-react": "^6.2.1",
+    "react": "^19.3.1",
+    "react-dom": "^19.3.1",
     "tsx": "^4.23.15",
-    "typescript": "^7.0.2"
+    "typescript": "^7.0.2",
+    "vite": "^8.3.5"
   }
 }
