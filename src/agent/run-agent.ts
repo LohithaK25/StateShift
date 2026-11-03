@@ -17,8 +17,21 @@ const client = new OpenAI({
 
 const MODEL = "muse-spark-1.3";
 const MAX_TURNS = 6;
+const MAX_REPAIR_ACTIONS = 2;
+let repairActions = 0;
 
-const simulator = new NetworkSimulator(scenarios.broken_link);
+const scenarioName =
+  process.env.SCENARIO ?? "broken_link";
+
+const selectedScenario = scenarios[
+  scenarioName as keyof typeof scenarios
+];
+
+if (!selectedScenario) {
+  throw new Error(`Unknown scenario: ${scenarioName}`);
+}
+
+const simulator = new NetworkSimulator(selectedScenario);
 
 const tools: OpenAI.Chat.Completions.ChatCompletionTool[] = [
   {
@@ -109,37 +122,91 @@ function executeTool(name: string, args: unknown): unknown {
     }
 
     case "repair_link": {
-      const { link_id } = input;
+        const { link_id } = input;
 
-      if (typeof link_id !== "string") {
-        return { success: false, error: "Invalid link ID." };
-      }
+        if (typeof link_id !== "string") {
+            return { success: false, error: "Invalid link ID." };
+        }
 
-      const success = simulator.repairLink(link_id);
+        if (simulator.testConnectivity("client", "service").reachable) {
+            return {
+            success: false,
+            error: "Repair denied: service is already reachable.",
+            };
+        }
 
-      return {
-        success,
-        message: success
-          ? `Link ${link_id} restored.`
-          : `Link ${link_id} does not exist.`,
-      };
+        if (repairActions >= MAX_REPAIR_ACTIONS) {
+            return {
+            success: false,
+            error: "Repair action limit reached.",
+            };
+        }
+
+        const link = simulator.inspect().links.find(
+            item => item.id === link_id,
+        );
+
+        if (!link || link.status !== "down") {
+            return {
+            success: false,
+            error: "Repair denied: link does not exist or is already operational.",
+            };
+        }
+
+        const success = simulator.repairLink(link_id);
+
+        if (success) repairActions++;
+
+        return {
+            success,
+            message: success
+            ? `Link ${link_id} restored.`
+            : `Link ${link_id} could not be restored.`,
+        };
     }
 
     case "restart_node": {
-      const { node_id } = input;
+        const { node_id } = input;
 
-      if (typeof node_id !== "string") {
-        return { success: false, error: "Invalid node ID." };
-      }
+        if (typeof node_id !== "string") {
+            return { success: false, error: "Invalid node ID." };
+        }
 
-      const success = simulator.restartNode(node_id);
+        if (simulator.testConnectivity("client", "service").reachable) {
+            return {
+            success: false,
+            error: "Restart denied: service is already reachable.",
+            };
+        }
 
-      return {
-        success,
-        message: success
-          ? `Node ${node_id} restarted.`
-          : `Node ${node_id} does not exist.`,
-      };
+        if (repairActions >= MAX_REPAIR_ACTIONS) {
+            return {
+            success: false,
+            error: "Repair action limit reached.",
+            };
+        }
+
+        const node = simulator.inspect().nodes.find(
+            item => item.id === node_id,
+        );
+
+        if (!node || node.status !== "down") {
+            return {
+            success: false,
+            error: "Restart denied: node does not exist or is already operational.",
+            };
+        }
+
+        const success = simulator.restartNode(node_id);
+
+        if (success) repairActions++;
+
+        return {
+            success,
+            message: success
+            ? `Node ${node_id} restarted.`
+            : `Node ${node_id} could not be restarted.`,
+        };
     }
 
     default:
@@ -158,13 +225,15 @@ Your objective is to restore connectivity between client and service.
 
 Rules:
 1. Inspect the network before making changes.
-2. Use connectivity tests to establish the failure.
-3. Diagnose the likely cause using actual tool results.
-4. Choose an appropriate repair action.
-5. Verify connectivity after making a repair.
+2. Test client-to-service connectivity before deciding on a repair.
+3. If connectivity is already working, do not modify the network.
+4. Use observed node and link states to diagnose failures.
+5. Only repair a component that is confirmed to be down.
 6. Never invent node IDs or link IDs.
-7. Never claim that a repair succeeded without evidence.
-8. You may use at most ${MAX_TURNS} model turns.
+7. You may perform at most two successful repair actions.
+8. Verify connectivity after every repair.
+9. Never claim recovery without verification.
+10. Explain why you acted or why no repair was necessary.
 
 Explain your investigation and final result clearly.
       `,

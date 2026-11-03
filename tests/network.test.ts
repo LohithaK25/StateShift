@@ -70,4 +70,21 @@ test("inspection cannot mutate internal state", () => {
     sim.testConnectivity("client", "service").reachable,
     false,
   );
+
+  test("redundant path preserves service connectivity", () => {
+    const sim = new NetworkSimulator(scenarios.redundant_path);
+
+    const before = sim.inspect();
+
+    const result = sim.testConnectivity("client", "service");
+
+    assert.equal(result.reachable, true);
+    assert.deepEqual(result.path, [
+        "client",
+        "router-3",
+        "service",
+    ]);
+
+    assert.deepEqual(sim.inspect(), before);
+  });
 });
