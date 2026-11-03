@@ -81,6 +81,10 @@ async function main() {
   }
 
   const toolResults = assistantMessage.tool_calls.map((toolCall) => {
+    if (toolCall.type !== "function") {
+      throw new Error("Unsupported tool-call type");
+    }
+
     if (toolCall.function.name !== "inspect_network") {
       throw new Error(`Unknown tool: ${toolCall.function.name}`);
     }
